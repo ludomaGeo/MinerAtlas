@@ -1,0 +1,143 @@
+---
+title: "Índice de riesgos"
+author: "Luis, Judá"
+date: "2025-04-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+install.packages("pacman")
+pacman::p_load(stringr, dplyr,readr)
+
+```
+
+# Estimación del índice de riesgos
+
+En este documento se detalla el flujo completo para realizar la estimación del índice riesgos en el marco de la elaboración del MinerAtlas.
+
+## 1. Carga de datos
+
+Leemos el CSV original en `datos`.
+
+```{r carga-datos}
+datos <- read.csv(
+  "C://Users//judab//Desktop//riesgo_final_202504192056.csv",
+  header = TRUE,
+  sep = ",",
+  stringsAsFactors = FALSE
+)
+
+str(datos)
+```
+
+## 2. Reconversión de columna *material*
+
+Cada celda de la columna `material` lista minerales separados por comas, por lo que se necesita realizar el conteo para proceder con la estimación de estadísticos.
+
+```{r cuenta-material}
+datos <- datos %>%
+  mutate(
+    material_n = ifelse(
+      material == "" | material == "0",
+      0,
+      str_count(material, ",") + 1
+    )
+  )
+head(datos)
+```
+
+## 3. Definición de ponderación por variable
+
+Se realizó la definición de los pesos que cada variable aportaría a la explicación del riesgo, quedando como se muestra a continuación.
+
+```{r pesos_variables}
+# Definición de pesos
+pesos <- c(conflictos_5km = 0.50,
+           cuerpos_agua_2km = 0.15,
+           anp_3km = 0.10,
+           porcentaje_ocupacion = 0.15,
+           material_n = 0.10)
+```
+
+## 4. Estandarización Z‑score
+
+Estandarizamos las cinco variables a partir del método de Z-Score el cuál se basa en la media y la desviación estándar.
+
+```{r estandarizacion}
+
+# Función para la estimación con los parámetros media y sd
+datos_std <- as.data.frame(lapply(names(pesos), function(var) {
+  x <- datos[[var]]
+  (x - mean(x, na.rm=TRUE)) / sd(x, na.rm=TRUE)
+}))
+names(datos_std) <- paste0("std_", names(pesos))
+
+# Creación de columnas de resultados 
+for(v in names(pesos)) {
+  datos[[paste0("aporte_", v)]] <- datos_std[[paste0("std_", v)]] * pesos[v]
+}
+
+```
+
+## 5. Cálculo del índice Z‑score
+
+Se estimó el valor en cada caso.
+
+```{r indice-z}
+# indice final
+datos$Indice_Z <- rowSums(datos[, paste0("aporte_", names(pesos))])
+
+# resultado con id
+resultado_z <- datos[, c("id_0", "id", "titulo",
+                         paste0("aporte_", names(pesos)),
+                         "Indice_Z")]
+
+# indice final
+datos$Indice_Z <- rowSums(datos[, paste0("aporte_", names(pesos))])
+
+# resultado con id
+resultado_z <- datos[, c("id_0", "id", "titulo",
+                         paste0("aporte_", names(pesos)),
+                         "Indice_Z")]
+```
+
+## 6. Conversión a valores de 0 a 1
+
+Se realizó una conversión en proporciones de 0 a 1 a fin de que los resultados fueran comparables en dimensiones conocidas, y no en términos de desviaciones estándar.
+
+```{r}
+# normalización
+min_Z <- min(resultado_z$Indice_Z, na.rm=TRUE)
+max_Z <- max(resultado_z$Indice_Z, na.rm=TRUE)
+resultado_z$Indice_Z01 <- (resultado_z$Indice_Z - min_Z) / (max_Z - min_Z)
+
+```
+
+## 7. Categorización del riesgo
+
+Se realizo una categorización del nivel del riesgo a partir de los valores que se obtuvieron, quedando de la siguiente forma.
+
+```{r clasificacion-riesgo}
+resultado_z$riesgo_z <- cut(resultado_z$Indice_Z01,
+                            breaks = c(0, 0.33, 0.66, 1),
+                            include.lowest = TRUE,
+                            labels = c("bajo", "medio", "alto"))
+```
+
+## 8. Exportar a CSV
+
+Se incorporan las variables que permitirán la concatenación con la capa espacial y se exporta a CSV.
+
+```{r exportar-csv}
+resultado_z$riesgo_z <- cut(resultado_z$Indice_Z01,
+                            breaks = c(0, 0.33, 0.66, 1),
+                            include.lowest = TRUE,
+                            labels = c("bajo", "medio", "alto"))
+
+#write_csv(resultado_z,"J:/Mi unidad/02_Segundo cuatrimestre/01_SIG/00_Proyecto SIG - Minería/04_Insumos/riesgos_zscore.csv")
+```
