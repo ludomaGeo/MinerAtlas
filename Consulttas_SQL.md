@@ -1,20 +1,52 @@
-Este documento contiene todas las consultas SQL realizadas durante el desarrollo del sistema MinerAtlas. Las consultas están organizadas por tema y explicadas individualmente para facilitar su comprensión y reutilización.
+Este archivo contiene el conjunto completo y documentado de consultas SQL utilizadas en el desarrollo del sistema de información geografica **MinerAtlas**. Su objetivo principal es permitir el análisis territorial de las concesiones mineras en México con base en su relación espacial con cuerpos de agua, áreas naturales protegidas, conflictos socioambientales, tenencia de la tierra y materiales extraídos.
+
+## Herramientas utilizadas
+
+Para ejecutar correctamente las consultas y replicar el análisis del proyecto **MinerAtlas**, es importante contar con el siguiente entorno y herramientas:
+
+- **PostgreSQL 16 + PostGIS**  
+  Para la gestión de bases de datos espaciales y ejecución de todas las consultas SQL.  
+  Se recomienda instalar:
+  - PostgreSQL
+  - PostGIS 
+
+- **QGIS 3. 30**  
+  Usado para visualizar capas geográficas, realizar uniones espaciales, exportar resultados y generar mapas finales. También se utilizó para unir capas generadas desde R con datos espaciales.
+
+- **DBeaver 24.3.3**  
+  Cliente de base de datos utilizado para interactuar de forma gráfica con PostgreSQL/PostGIS. Facilita la escritura, prueba y depuración de consultas.
+
+- **Rstudio**  
+  Utilizado en la etapa de estimación del índice de riesgo. El cálculo fue externo a SQL y los resultados se integraron en QGIS para análisis espacial. Se recomienda tener instalado RStudio si se desea replicar esta parte.
+
+## Estructura general del archivo
+
+Este docuemnto se presenta en tres grandes bloques, que explican a grandes rasgos la logica del procesamiento:
+
+## 1. Preparación y procesamiento general
+En este primer apartado se nncluye la creación de la base de datos, activación de extensiones, verificación de SRID y generación de índices espaciales. Son pasos previos necesarios para optimizar la base de datos.
+
+## 2. Consultas de análisis espacial
+Este bloque contiene las consultas principales que analizan la relación espacial entre las concesiones mineras y capas de interés: conflictos, cuencas, ANP, cuerpos de agua, núcleos agrarios y materiales extraídos.
+
+## 3. Estimación del índice de riesgo (proceso externo en R)
+El índice de riesgo socioambiental fue calculado en R a partir de las variables normalizadas exportadas desde SQL. Los resultados fueron posteriormente integrados con QGIS para su análisis espacial y visualización.  
 
 ---
 
-## 1. Creación de base de datos y extensión espacial
+### 1.1 Creación de base de datos y extensión espacial
 
 Se crea una base de datos para el proyecto y se habilita la extensión PostGIS para trabajar con geometrías espaciales.
-```sql
+``` sql
 CREATE DATABASE sig_conflictos;
 CREATE EXTENSION postgis;
 ```
 
 ---
 
-## 2. Verificación de SRID y creación de índices espaciales
+### 1.2  Verificación de SRID y creación de índices espaciales
 
-Consulta para revisar si las capas utilizan el mismo sistema de coordenadas (SRID), requisito fundamental para hacer operaciones espaciales correctas.
+Consulta para revisar si las capas utilizan el mismo sistema de coordenadas (SRID), requisito fundamental para hacer operaciones espaciales correctas, se presenta la estructura con dos ejemplos pero se verifica con todas las capas que se utilizaorn
 ```sql
 SELECT DISTINCT ST_SRID(geom) FROM public."Concesiones_mineras";
 SELECT DISTINCT ST_SRID(geom) FROM public.conflictos_mineros_2;
@@ -34,8 +66,8 @@ CREATE INDEX idx_municipios_geom ON municipios USING GIST (geom);
 ```
 
 ---
-
-## 3. Concesiones y conflictos
+## 2. Consultas de análisis espacial
+### 2.1 Concesiones y conflictos
 
 Se cuenta cuántos conflictos hay cerca de cada concesión minera (radio de 5 km) y se almacena en una nueva tabla.
 ```sql
@@ -89,7 +121,7 @@ LIMIT 10;
 
 ---
 
-## 4. Cercanía a cuerpos de agua
+### 2.1 Cercanía a cuerpos de agua
 
 Consulta que mide cuántos cuerpos de agua hay cerca de cada concesión minera, en un radio de 2 km.
 ```sql
@@ -103,7 +135,7 @@ ORDER BY cuerpos_agua_cercanos DESC;
 
 ---
 
-## 5. Relación con Áreas Naturales Protegidas (ANP)
+### 2.2 Relación con Áreas Naturales Protegidas (ANP)
 
 Consulta simple que cuenta cuántas ANP están cercanas a cada concesión minera en un rango de 3 km.
 ```sql
@@ -127,10 +159,7 @@ ORDER BY anp_cercanas DESC;
 
 ---
 
-(Continúa en el archivo completo…)
----
-
-## 6. Ocupación de núcleos agrarios
+### 2.3 Ocupación de núcleos agrarios
 
 Cuenta cuántos núcleos agrarios tienen al menos una concesión minera dentro de su territorio.
 ```sql
@@ -169,7 +198,7 @@ ORDER BY porcentaje_ocupacion_nucleo DESC;
 
 ---
 
-## 7. Asignación de materiales extraídos
+### 2.4 Asignación de materiales extraídos
 
 Añade una nueva columna para registrar el mineral asociado a cada concesión según la intersección con minas puntuales.
 ```sql
@@ -189,36 +218,9 @@ WHERE material IS NOT NULL;
 ```
 
 ---
+## 3. Estimación del índice de riesgo (proceso externo en R)
 
-## 8. Cálculo del índice de riesgo socioambiental
+Después de realizar los procesos de consulta y preparación de datos en DBeaver, la información fue trasladada a R, donde se calculó el índice de riesgo combinando distintas variables relevantes. Este cálculo permitió obtener un valor que resume el nivel de riesgo asociado a cada unidad espacial. Posteriormente, los resultados fueron exportados y utilizados en QGIS para generar un mapa que representa visualmente las zonas con mayor y menor riesgo. A continuación, se presenta el código utilizado para el cálculo del índice en R.
+## 3.1 Cálculo del índice de riesgo socioambiental
 
-Calcula un índice ponderado con cinco criterios normalizados: conflictos, cuerpos de agua, ANP, ocupación de núcleos y tipo de material. Genera una clasificación de nivel de riesgo (bajo, medio, alto).
-```sql
-CREATE TABLE riesgo_final AS
-SELECT *,
-       ROUND((
-           0.50 * conflictos_norm +
-           0.15 * cuerpos_norm +
-           0.10 * anp_norm +
-           0.15 * ocupacion_norm +
-           0.10 * material_valorado
-       )::numeric, 3) AS indice_riesgo,
-       CASE 
-           WHEN (
-               0.50 * conflictos_norm +
-               0.15 * cuerpos_norm +
-               0.10 * anp_norm +
-               0.15 * ocupacion_norm +
-               0.10 * material_valorado
-           ) < 0.33 THEN 'Bajo'
-           WHEN (
-               0.50 * conflictos_norm +
-               0.15 * cuerpos_norm +
-               0.10 * anp_norm +
-               0.15 * ocupacion_norm +
-               0.10 * material_valorado
-           ) < 0.66 THEN 'Medio'
-           ELSE 'Alto'
-       END AS nivel_riesgo
-FROM riesgo_base_3;
-```
+
