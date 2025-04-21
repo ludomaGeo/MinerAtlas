@@ -20,7 +20,7 @@ MinerAtlas/
 ├── Consultas_sql_minerAtlas.md      ← Documento con todas las consultas SQL, documentadas y explicadas
 ├── datos_usados/                    ← Carpeta con archivos geográficos utilizados (.gpkg, .csv, etc.)
 │   └── readme.md                    ← Explicación de los datos utilizados
-├── riesgo.Rmd (opcional)           ← Script en R para cálculo del índice de riesgo
+├── riesgo.Rmd           ← Script en R para cálculo del índice de riesgo
 ├── README.md                        ← Este archivo
 ```
 
